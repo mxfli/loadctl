@@ -29,9 +29,9 @@ get_cpu_info() {
     
     echo -e "${BLUE}CPU 信息:${NC}"
     printf "  使用率: "
-    if (( $(echo "$cpu_usage > 70" | bc -l) )); then
+    if [ $(awk -v usage="$cpu_usage" 'BEGIN {print (usage > 70) ? 1 : 0}') -eq 1 ]; then
         echo -e "${RED}${cpu_usage}%${NC}"
-    elif (( $(echo "$cpu_usage > 50" | bc -l) )); then
+    elif [ $(awk -v usage="$cpu_usage" 'BEGIN {print (usage > 50) ? 1 : 0}') -eq 1 ]; then
         echo -e "${YELLOW}${cpu_usage}%${NC}"
     else
         echo -e "${GREEN}${cpu_usage}%${NC}"
@@ -52,13 +52,13 @@ get_memory_info() {
     # 计算使用率
     local mem_total_kb=$(free | grep '^Mem:' | awk '{print $2}')
     local mem_used_kb=$(free | grep '^Mem:' | awk '{print $3}')
-    local mem_usage=$(echo "scale=1; $mem_used_kb * 100 / $mem_total_kb" | bc)
+    local mem_usage=$(awk -v used="$mem_used_kb" -v total="$mem_total_kb" 'BEGIN {printf "%.1f", used * 100 / total}')
     
     echo -e "${BLUE}内存信息:${NC}"
     printf "  使用率: "
-    if (( $(echo "$mem_usage > 80" | bc -l) )); then
+    if [ $(awk -v usage="$mem_usage" 'BEGIN {print (usage > 80) ? 1 : 0}') -eq 1 ]; then
         echo -e "${RED}${mem_usage}%${NC}"
-    elif (( $(echo "$mem_usage > 60" | bc -l) )); then
+    elif [ $(awk -v usage="$mem_usage" 'BEGIN {print (usage > 60) ? 1 : 0}') -eq 1 ]; then
         echo -e "${YELLOW}${mem_usage}%${NC}"
     else
         echo -e "${GREEN}${mem_usage}%${NC}"
@@ -177,14 +177,6 @@ main_monitor() {
             h) show_help ;;
         esac
     done
-    
-    # 检查依赖
-    if ! command -v bc >/dev/null 2>&1; then
-        echo "错误: 需要安装 bc 计算器"
-        echo "sudo apt-get install bc  # Ubuntu/Debian"
-        echo "sudo yum install bc      # CentOS/RHEL"
-        exit 1
-    fi
     
     while true; do
         # 清屏

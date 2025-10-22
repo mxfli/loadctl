@@ -124,7 +124,7 @@ check_loadctl_dependencies() {
     log "检查 loadctl.sh 的依赖包..."
     
     local missing_deps=()
-    local required_tools=("bc" "awk" "free" "top" "nproc")
+    local required_tools=("awk" "free" "top" "nproc")
     
     # 检查必需的工具
     for tool in "${required_tools[@]}"; do
@@ -160,24 +160,23 @@ install_dependencies() {
         fi
     fi
     
-    # 安装其他基础依赖
+    # 安装其他基础依赖（不包括 stress-ng）
     if command -v apt-get >/dev/null 2>&1; then
         log "使用 apt-get 安装基础依赖..."
         sudo apt-get update
-        sudo apt-get install -y bc curl wget
+        sudo apt-get install -y curl wget
     elif command -v yum >/dev/null 2>&1; then
         log "使用 yum 安装基础依赖..."
-        sudo yum install -y epel-release
-        sudo yum install -y bc curl wget
+        sudo yum install -y curl wget
     elif command -v dnf >/dev/null 2>&1; then
         log "使用 dnf 安装基础依赖..."
-        sudo dnf install -y bc curl wget
+        sudo dnf install -y curl wget
     elif command -v zypper >/dev/null 2>&1; then
         log "使用 zypper 安装基础依赖..."
-        sudo zypper install -y bc curl wget
+        sudo zypper install -y curl wget
     elif command -v pacman >/dev/null 2>&1; then
         log "使用 pacman 安装基础依赖..."
-        sudo pacman -S --noconfirm bc curl wget
+        sudo pacman -S --noconfirm curl wget
     else
         warn "不支持的包管理器，跳过基础依赖安装"
     fi
@@ -189,7 +188,7 @@ verify_installation() {
     
     local missing_tools=()
     
-    for tool in stress-ng bc curl wget; do
+    for tool in stress-ng curl wget; do
         if ! command -v $tool >/dev/null 2>&1; then
             missing_tools+=($tool)
         fi
@@ -640,17 +639,26 @@ main() {
                     ;;
                 2)
                     log "使用包管理器安装依赖..."
-                    # 跳过 install_stress_ng.sh，直接使用包管理器
+                    # 先使用包管理器安装基础依赖（不包括 stress-ng）
                     if command -v apt-get >/dev/null 2>&1; then
-                        sudo apt-get update && sudo apt-get install -y stress-ng bc curl wget
+                        sudo apt-get update && sudo apt-get install -y curl wget
                     elif command -v yum >/dev/null 2>&1; then
-                        sudo yum install -y epel-release && sudo yum install -y stress-ng bc curl wget
+                        sudo yum install -y curl wget
                     elif command -v dnf >/dev/null 2>&1; then
-                        sudo dnf install -y stress-ng bc curl wget
+                        sudo dnf install -y curl wget
                     elif command -v zypper >/dev/null 2>&1; then
-                        sudo zypper install -y stress-ng bc curl wget
+                        sudo zypper install -y curl wget
                     elif command -v pacman >/dev/null 2>&1; then
-                        sudo pacman -S --noconfirm stress bc curl wget
+                        sudo pacman -S --noconfirm curl wget
+                    fi
+                    
+                    # 使用 install_stress_ng.sh 安装 stress-ng
+                    if ! command -v stress-ng >/dev/null 2>&1; then
+                        log "使用 install_stress_ng.sh 安装 stress-ng..."
+                        if ! install_stress_ng_offline; then
+                            error "stress-ng 安装失败"
+                            exit 1
+                        fi
                     fi
                     
                     if ! verify_installation; then
@@ -662,11 +670,11 @@ main() {
                     log "使用 install_stress_ng.sh 在线安装..."
                     # 先安装基础工具
                     if command -v apt-get >/dev/null 2>&1; then
-                        sudo apt-get install -y bc curl wget
+                        sudo apt-get install -y curl wget
                     elif command -v yum >/dev/null 2>&1; then
-                        sudo yum install -y bc curl wget
+                        sudo yum install -y curl wget
                     elif command -v dnf >/dev/null 2>&1; then
-                        sudo dnf install -y bc curl wget
+                        sudo dnf install -y curl wget
                     fi
                     
                     # 使用 install_stress_ng.sh 在线安装
@@ -684,7 +692,7 @@ main() {
                     ;;
                 4)
                     log "跳过依赖安装，请确保已手动安装必需工具"
-                    warn "请确保已安装: stress-ng, bc, curl, wget"
+                    warn "请确保已安装: stress-ng, curl, wget"
                     ;;
                 *)
                     error "无效选择，退出"

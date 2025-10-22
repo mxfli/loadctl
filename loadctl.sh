@@ -71,7 +71,7 @@ EOF
 check_dependencies() {
     local missing_deps=()
     
-    for cmd in stress-ng bc awk free top; do
+    for cmd in stress-ng awk free top; do
         if ! command -v "$cmd" >/dev/null 2>&1; then
             missing_deps+=("$cmd")
         fi
@@ -80,8 +80,8 @@ check_dependencies() {
     if [ ${#missing_deps[@]} -gt 0 ]; then
         log "错误: 缺少必需的命令: ${missing_deps[*]}"
         log "请安装缺少的工具："
-        log "  Ubuntu/Debian: sudo apt-get install stress-ng bc"
-        log "  CentOS/RHEL: sudo yum install stress-ng bc"
+        log "  Ubuntu/Debian: sudo apt-get install stress-ng"
+        log "  CentOS/RHEL: sudo yum install stress-ng"
         exit 1
     fi
 }
@@ -109,7 +109,7 @@ get_current_usage() {
     local mem_info=$(free | grep '^Mem:')
     local mem_total=$(echo $mem_info | awk '{print $2}')
     local mem_available=$(echo $mem_info | awk '{print $7}')
-    local mem_usage=$(echo "scale=1; ($mem_total - $mem_available) * 100 / $mem_total" | bc)
+    local mem_usage=$(awk -v total="$mem_total" -v avail="$mem_available" 'BEGIN {printf "%.1f", (total - avail) * 100 / total}')
     
     # 获取系统负载
     local load_avg=$(uptime | awk -F'load average:' '{print $2}' | awk '{print $1}' | tr -d ',')
@@ -141,7 +141,7 @@ check_system_readiness() {
         return 1
     fi
     
-    if (( $(echo "$load_avg > $CPU_CORES * 2" | bc -l) )); then
+    if [ $(awk -v load="$load_avg" -v cores="$CPU_CORES" 'BEGIN {print (load > cores * 2) ? 1 : 0}') -eq 1 ]; then
         log "错误: 系统负载过高 ($load_avg)，不适合运行压力测试"
         return 1
     fi
@@ -358,7 +358,7 @@ intelligent_adjustment() {
         fi
         
         # 检查系统负载是否过高
-        if (( $(echo "$load_avg > $CPU_CORES * 1.5" | bc -l) )); then
+        if [ $(awk -v load="$load_avg" -v cores="$CPU_CORES" 'BEGIN {print (load > cores * 1.5) ? 1 : 0}') -eq 1 ]; then
             new_target_cpu=$((new_target_cpu - 10))
             need_adjustment=true
             log "系统负载过高 ($load_avg)，大幅降低CPU目标到 ${new_target_cpu}%"
