@@ -143,6 +143,11 @@ check_loadctl_dependencies() {
         return 0
     else
         warn "缺少以下依赖包: ${missing_deps[*]}"
+        echo
+        echo "您有两个选择："
+        echo "1. 安装缺失的依赖包（推荐）"
+        echo "2. 使用 loadctl-simple.sh 版本（不依赖第三方工具）"
+        echo
         return 1
     fi
 }
@@ -244,6 +249,51 @@ install_loadctl() {
     fi
     
     log "loadctl.sh 安装完成: $install_dir"
+    return 0
+}
+
+# 安装 loadctl-simple.sh 版本到指定目录
+install_loadctl_simple() {
+    local install_dir="${1:-/opt/app/loadctl}"
+    
+    log "安装 loadctl-simple.sh 版本到 $install_dir..."
+    
+    # 检查 loadctl-simple.sh 是否存在
+    if [ ! -f "./loadctl-simple.sh" ]; then
+        error "找不到 loadctl-simple.sh 脚本"
+        return 1
+    fi
+    
+    # 创建安装目录
+    if ! sudo mkdir -p "$install_dir"; then
+        error "无法创建安装目录: $install_dir"
+        return 1
+    fi
+    
+    # 复制 loadctl-simple.sh 并重命名为 loadctl.sh
+    if ! sudo cp ./loadctl-simple.sh "$install_dir/loadctl.sh"; then
+        error "复制 loadctl-simple.sh 失败"
+        return 1
+    fi
+    
+    # 复制相关脚本（如果存在）
+    for script in system_monitor.sh emergency_cleanup.sh; do
+        if [ -f "./$script" ]; then
+            sudo cp "./$script" "$install_dir/" || warn "复制 $script 失败"
+        fi
+    done
+    
+    # 设置权限
+    sudo chmod +x "$install_dir"/*.sh
+    
+    # 创建符号链接到 /usr/local/bin (可选)
+    if [ -d "/usr/local/bin" ]; then
+        sudo ln -sf "$install_dir/loadctl.sh" /usr/local/bin/loadctl 2>/dev/null || true
+        log "创建符号链接: /usr/local/bin/loadctl -> $install_dir/loadctl.sh"
+    fi
+    
+    log "loadctl-simple.sh 版本安装完成: $install_dir"
+    log "注意：已将 rush_cpu_memory_simple.sh 重命名为 loadctl.sh"
     return 0
 }
 
@@ -402,7 +452,6 @@ generate_crontab_task() {
     echo "  - 执行时间: 每天凌晨 2:00"
     echo "  - 运行时长: 15 分钟 (900 秒)"
     echo "  - CPU 目标: 45%"
-    echo "  - 内存目标: 40%"
     echo "  - 日志输出: 重定向到 /dev/null"
     echo
     
@@ -419,7 +468,7 @@ setup_crontab_task() {
     else
         echo
         echo "是否要自动配置 crontab 定时任务？"
-        echo "任务将在每天凌晨2点执行，运行15分钟，CPU负载45%，内存负载40%"
+        echo "任务将在每天凌晨2点执行，运行15分钟，CPU负载45%"
         echo
         read -p "请选择 [y/N]: " -n 1 -r
         echo
@@ -434,7 +483,7 @@ setup_crontab_task() {
     if [ "$setup_crontab" = true ]; then
         log "配置 crontab 定时任务..."
         
-        local crontab_task="0 2 * * * $install_dir/loadctl.sh -t 900 -c 45 -m 40 >/dev/null 2>&1"
+        local crontab_task="0 2 * * * $install_dir/loadctl.sh -t 900 -c 45 >/dev/null 2>&1"
         
         # 检查是否已存在相同的任务
         if crontab -l 2>/dev/null | grep -q "$install_dir/loadctl.sh"; then
@@ -478,7 +527,7 @@ setup_crontab_task() {
         log "跳过 crontab 自动配置"
         echo "您可以手动添加以下任务到 crontab："
         echo "  crontab -e"
-        echo "  然后添加: 0 2 * * * $install_dir/loadctl.sh -t 900 -c 45 -m 40 >/dev/null 2>&1"
+        echo "  然后添加: 0 2 * * * $install_dir/loadctl.sh -t 900 -c 45 >/dev/null 2>&1"
     fi
     
     return 0
@@ -600,118 +649,173 @@ main() {
     log "检查 loadctl.sh 依赖包..."
     if check_loadctl_dependencies; then
         log "所有依赖包已安装"
+        use_simple_version=false
     else
         if [ "$AUTO_MODE" = true ]; then
             log "自动模式：安装缺少的依赖包..."
             log "使用 install_stress_ng.sh 离线安装..."
-            install_dependencies
-            if ! verify_installation; then
-                error "依赖安装失败"
-                exit 1
+            if install_dependencies && verify_installation; then
+                use_simple_version=false
+            else
+                warn "依赖安装失败，将使用 loadctl-simple.sh 版本"
+                use_simple_version=true
             fi
         else
             echo
-            echo "是否要安装缺少的依赖包？"
-            read -p "请选择 [Y/n]: " -n 1 -r
+            echo "选择安装方式："
+            echo "1) 安装缺失的依赖包（推荐）"
+            echo "2) 使用 loadctl-simple.sh 版本（不依赖第三方工具）"
+            echo
+            read -p "请选择 [1-2]: " -n 1 -r
             echo
             
-            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
-            # 询问是否安装依赖
-            echo
-            echo "选择安装方式:"
-            echo "1) 使用 install_stress_ng.sh 离线安装 (推荐)"
-            echo "2) 使用包管理器安装"
-            echo "3) 使用 install_stress_ng.sh 在线安装"
-            echo "4) 跳过安装 (已手动安装依赖)"
-            echo
-            read -p "请选择 [1-4]: " -n 1 -r
-            echo
-            echo
-            
-            case $REPLY in
-                1|"")
-                    log "使用 install_stress_ng.sh 离线安装..."
-                    install_dependencies
-                    if ! verify_installation; then
-                        error "依赖安装失败"
-                        exit 1
-                    fi
-                    ;;
-                2)
-                    log "使用包管理器安装依赖..."
-                    # 先使用包管理器安装基础依赖（不包括 stress-ng）
-                    if command -v apt-get >/dev/null 2>&1; then
-                        sudo apt-get update && sudo apt-get install -y curl wget
-                    elif command -v yum >/dev/null 2>&1; then
-                        sudo yum install -y curl wget
-                    elif command -v dnf >/dev/null 2>&1; then
-                        sudo dnf install -y curl wget
-                    elif command -v zypper >/dev/null 2>&1; then
-                        sudo zypper install -y curl wget
-                    elif command -v pacman >/dev/null 2>&1; then
-                        sudo pacman -S --noconfirm curl wget
-                    fi
-                    
-                    # 使用 install_stress_ng.sh 安装 stress-ng
-                    if ! command -v stress-ng >/dev/null 2>&1; then
-                        log "使用 install_stress_ng.sh 安装 stress-ng..."
-                        if ! install_stress_ng_offline; then
-                            error "stress-ng 安装失败"
-                            exit 1
-                        fi
-                    fi
-                    
-                    if ! verify_installation; then
-                        error "依赖安装失败"
-                        exit 1
-                    fi
-                    ;;
-                3)
-                    log "使用 install_stress_ng.sh 在线安装..."
-                    # 先安装基础工具
-                    if command -v apt-get >/dev/null 2>&1; then
-                        sudo apt-get install -y curl wget
-                    elif command -v yum >/dev/null 2>&1; then
-                        sudo yum install -y curl wget
-                    elif command -v dnf >/dev/null 2>&1; then
-                        sudo dnf install -y curl wget
-                    fi
-                    
-                    # 使用 install_stress_ng.sh 在线安装
-                    if ./install_stress_ng.sh --offline false; then
-                        log "在线安装成功"
-                    else
-                        error "在线安装失败"
-                        exit 1
-                    fi
-                    
-                    if ! verify_installation; then
-                        error "安装验证失败"
-                        exit 1
-                    fi
-                    ;;
-                4)
-                    log "跳过依赖安装，请确保已手动安装必需工具"
-                    warn "请确保已安装: stress-ng, curl, wget"
-                    ;;
-                *)
-                    error "无效选择，退出"
-                    exit 1
-                    ;;
-                esac
+            if [[ $REPLY =~ ^[2]$ ]]; then
+                log "选择使用 loadctl-simple.sh 版本"
+                use_simple_version=true
             else
-                warn "跳过依赖安装，请确保手动安装所需依赖"
+                # 询问是否安装依赖
+                echo
+                echo "选择安装方式:"
+                echo "1) 使用 install_stress_ng.sh 离线安装 (推荐)"
+                echo "2) 使用包管理器安装"
+                echo "3) 使用 install_stress_ng.sh 在线安装"
+                echo "4) 跳过安装 (已手动安装依赖)"
+                echo
+                read -p "请选择 [1-4]: " -n 1 -r
+                echo
+                echo
+                
+                case $REPLY in
+                    1|"")
+                        log "使用 install_stress_ng.sh 离线安装..."
+                        if install_dependencies && verify_installation; then
+                            use_simple_version=false
+                        else
+                            warn "依赖安装失败，是否使用 loadctl-simple.sh 版本？"
+                            read -p "请选择 [Y/n]: " -n 1 -r
+                            echo
+                            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                                use_simple_version=true
+                            else
+                                error "依赖安装失败，退出"
+                                exit 1
+                            fi
+                        fi
+                        ;;
+                    2)
+                        log "使用包管理器安装依赖..."
+                        # 先使用包管理器安装基础依赖（不包括 stress-ng）
+                        if command -v apt-get >/dev/null 2>&1; then
+                            sudo apt-get update && sudo apt-get install -y curl wget
+                        elif command -v yum >/dev/null 2>&1; then
+                            sudo yum install -y curl wget
+                        elif command -v dnf >/dev/null 2>&1; then
+                            sudo dnf install -y curl wget
+                        elif command -v zypper >/dev/null 2>&1; then
+                            sudo zypper install -y curl wget
+                        elif command -v pacman >/dev/null 2>&1; then
+                            sudo pacman -S --noconfirm curl wget
+                        fi
+                        
+                        # 使用 install_stress_ng.sh 安装 stress-ng
+                        if ! command -v stress-ng >/dev/null 2>&1; then
+                            log "使用 install_stress_ng.sh 安装 stress-ng..."
+                            if ! install_stress_ng_offline; then
+                                warn "stress-ng 安装失败，是否使用 loadctl-simple.sh 版本？"
+                                read -p "请选择 [Y/n]: " -n 1 -r
+                                echo
+                                if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                                    use_simple_version=true
+                                else
+                                    error "stress-ng 安装失败，退出"
+                                    exit 1
+                                fi
+                            fi
+                        fi
+                        
+                        if [ "$use_simple_version" != true ] && ! verify_installation; then
+                            warn "依赖安装失败，是否使用 loadctl-simple.sh 版本？"
+                            read -p "请选择 [Y/n]: " -n 1 -r
+                            echo
+                            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                                use_simple_version=true
+                            else
+                                error "依赖安装失败，退出"
+                                exit 1
+                            fi
+                        else
+                            use_simple_version=false
+                        fi
+                        ;;
+                    3)
+                        log "使用 install_stress_ng.sh 在线安装..."
+                        # 先安装基础工具
+                        if command -v apt-get >/dev/null 2>&1; then
+                            sudo apt-get install -y curl wget
+                        elif command -v yum >/dev/null 2>&1; then
+                            sudo yum install -y curl wget
+                        elif command -v dnf >/dev/null 2>&1; then
+                            sudo dnf install -y curl wget
+                        fi
+                        
+                        # 使用 install_stress_ng.sh 在线安装
+                        if ./install_stress_ng.sh --offline false; then
+                            log "在线安装成功"
+                            if verify_installation; then
+                                use_simple_version=false
+                            else
+                                warn "安装验证失败，是否使用 loadctl-simple.sh 版本？"
+                                read -p "请选择 [Y/n]: " -n 1 -r
+                                echo
+                                if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                                    use_simple_version=true
+                                else
+                                    error "安装验证失败，退出"
+                                    exit 1
+                                fi
+                            fi
+                        else
+                            warn "在线安装失败，是否使用 loadctl-simple.sh 版本？"
+                            read -p "请选择 [Y/n]: " -n 1 -r
+                            echo
+                            if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+                                use_simple_version=true
+                            else
+                                error "在线安装失败，退出"
+                                exit 1
+                            fi
+                        fi
+                        ;;
+                    4)
+                        log "跳过依赖安装，请确保已手动安装必需工具"
+                        warn "请确保已安装: stress-ng, curl, wget"
+                        use_simple_version=false
+                        ;;
+                    *)
+                        error "无效选择，退出"
+                        exit 1
+                        ;;
+                esac
             fi
         fi
     fi
     
-    # 安装 loadctl.sh
+    # 安装 loadctl.sh 或 loadctl-simple.sh
     echo
-    if install_loadctl "$install_dir"; then
-        log "loadctl.sh 安装成功"
+    if [ "$use_simple_version" = true ]; then
+        if install_loadctl_simple "$install_dir"; then
+            log "loadctl-simple.sh 版本安装成功"
+        else
+            error "loadctl-simple.sh 版本安装失败"
+            exit 1
+        fi
     else
-        error "loadctl.sh 安装失败"
-        exit 1
+        if install_loadctl "$install_dir"; then
+            log "loadctl.sh 安装成功"
+        else
+            error "loadctl.sh 安装失败"
+            exit 1
+        fi
     fi
     
     setup_scripts

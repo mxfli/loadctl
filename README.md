@@ -20,20 +20,33 @@ loadctl 是一个安全可靠的系统资源压力测试工具套件，用于替
 
 | 文件名                    | 用途             | 说明                 |
 |------------------------|----------------|--------------------|
-| `loadctl.sh`           | 主控制脚本          | 智能资源控制和压力测试        |
+| `loadctl.sh`           | 主控制脚本          | 智能资源控制和压力测试，依赖 stress-ng        |
+| `loadctl-simple.sh`    | 纯Shell版本脚本     | 无依赖纯shell版本，支持可选内存测试        |
 | `system_monitor.sh`    | 监控脚本           | 实时系统状态监控           |
-| `install_and_setup.sh` | 安装脚本           | 自动安装依赖和设置环境        |
+| `install_and_setup.sh` | 智能安装脚本           | 智能依赖检测，自动选择版本和安装环境        |
 | `install_stress_ng.sh` | stress-ng 安装脚本 | 统一安装脚本，支持在线/离线模式   |
 | `emergency_cleanup.sh` | 紧急清理脚本         | 清理残留的 stress-ng 进程 |
 | `README.md`            | 总览文档           | 项目概述和快速开始          |
 
 ## 快速开始
 
-### 1. 一键安装和设置
+### 1. 智能一键安装和设置
 
 ```bash
+# 交互式安装（推荐）
 ./install_and_setup.sh
+
+# 一键自动安装（无交互）
+./install_and_setup.sh --auto
 ```
+
+**智能安装特性：**
+- 🔍 **智能依赖检测**：自动检测系统依赖，选择最适合的版本
+- 🎯 **版本自动选择**：依赖完整时使用 `loadctl.sh`，否则自动切换到 `loadctl-simple.sh`
+- 📁 **灵活安装路径**：支持自定义安装目录，默认 `/opt/app/loadctl`
+- 🔗 **符号链接创建**：自动创建 `/usr/local/bin/loadctl` 便于全局调用
+- ⚡ **多种安装方式**：支持离线安装、在线安装、包管理器安装
+- 🧪 **安装验证**：自动运行测试验证安装是否成功
 
 ### 2. 编译安装 stress-ng（可选）
 
@@ -57,9 +70,16 @@ loadctl 是一个安全可靠的系统资源压力测试工具套件，用于替
 ```bash
 # 测试模式 - 检查参数但不实际运行
 ./loadctl.sh -T
+# 或使用 loadctl-simple.sh（无依赖版本）
+./loadctl-simple.sh -T
 
 # 轻度压力测试 - CPU 35%, 内存 40%, 运行 5 分钟
 ./loadctl.sh -t 300 -c 35 -m 40
+# 或使用 simple 版本
+./loadctl-simple.sh -t 300 -c 35 -m 40
+
+# 仅CPU测试（不测试内存）- loadctl-simple.sh 特有功能
+./loadctl-simple.sh -c 50
 
 # 标准压力测试 - CPU 50%, 内存 50%, 运行 15 分钟
 ./loadctl.sh
@@ -71,6 +91,8 @@ loadctl 是一个安全可靠的系统资源压力测试工具套件，用于替
 ## 详细使用说明
 
 ### 主控制脚本参数
+
+#### loadctl.sh（完整版本，依赖 stress-ng）
 
 ```bash
 ./loadctl.sh [选项]
@@ -84,6 +106,26 @@ loadctl 是一个安全可靠的系统资源压力测试工具套件，用于替
   -l <文件>     日志文件路径
   -T            测试模式，只显示配置不实际运行
   -h            显示帮助信息
+```
+
+#### loadctl-simple.sh（纯Shell版本，无依赖）
+
+```bash
+./loadctl-simple.sh [选项]
+
+选项:
+  -t <秒数>     运行时间 (默认: 600-900秒随机)
+  -c <百分比>   目标CPU使用率 (默认: 35%, 范围: 1-100%)
+  -m <百分比>   目标内存使用率 (可选，默认不启用，范围: 1-95%)
+  -T            测试模式，只显示配置不实际运行
+  -h            显示帮助信息
+
+特色功能:
+  • 可选内存测试：-m 参数可选，不指定时仅进行CPU测试
+  • 动态资源管理：实时监控并自动调整资源使用
+  • 渐进式调整：平滑增减资源使用，避免系统冲击
+  • 完善清理机制：支持 Ctrl+C 安全中断并自动清理
+  • 跨平台支持：支持 Linux 和 macOS 系统
 ```
 
 ### 监控脚本参数
@@ -141,14 +183,24 @@ loadctl.sh 的一基本功能是**动态基线内存追踪**，确保压力测�
 测试系统在不同负载下的表现和稳定性：
 
 ```bash
-# 轻度压力测试
+# 轻度压力测试（使用 loadctl.sh）
 ./loadctl.sh -t 600 -c 35 -m 40
+
+# 轻度压力测试（使用 loadctl-simple.sh，仅CPU）
+./loadctl-simple.sh -t 600 -c 35
+
+# 轻度压力测试（使用 loadctl-simple.sh，CPU+内存）
+./loadctl-simple.sh -t 600 -c 35 -m 40
 
 # 中度压力测试  
 ./loadctl.sh -t 1800 -c 50 -m 50
+# 或使用 simple 版本
+./loadctl-simple.sh -t 1800 -c 50 -m 50
 
 # 高强度压力测试
 ./loadctl.sh -t 3600 -c 60 -m 55
+# 或使用 simple 版本
+./loadctl-simple.sh -t 3600 -c 60 -m 55
 ```
 
 ### 2. 性能基线测试
@@ -190,20 +242,31 @@ loadctl.sh 的一基本功能是**动态基线内存追踪**，确保压力测�
 
 ### 系统要求
 
+#### loadctl.sh（完整版本）
 - Linux 系统 (推荐 Ubuntu 18.04+ 或 CentOS 7+)
 - 至少 2GB 内存
 - stress-ng 工具
 - bc 计算器
 - 普通用户权限即可运行
 
+#### loadctl-simple.sh（纯Shell版本）
+- Linux 或 macOS 系统
+- 至少 1GB 内存
+- 支持 /dev/shm 的系统（Linux）或 /tmp（macOS）
+- 无需第三方依赖工具
+- 普通用户权限即可运行
+
 ## 故障排除
 
 ### 常见问题
 
-1. **stress-ng 未找到**
+1. **依赖工具未找到（stress-ng/bc）**
    ```bash
-   # 运行安装脚本
+   # 运行智能安装脚本，自动检测并安装依赖
    ./install_and_setup.sh
+   
+   # 或直接使用无依赖版本
+   ./loadctl-simple.sh -T
    ```
 
 2. **权限问题**
@@ -216,6 +279,19 @@ loadctl.sh 的一基本功能是**动态基线内存追踪**，确保压力测�
    # 检查当前状态
    ./system_monitor.sh -1
    # 等待负载降低后再运行
+   ```
+
+4. **CPU使用率计算不准确（已修复）**
+   ```bash
+   # loadctl-simple.sh 已修复 CPU 使用率计算问题
+   # 现在支持 Linux 和 macOS 系统的准确计算
+   ./loadctl-simple.sh -T -c 50
+   ```
+
+5. **进程清理不完整（已修复）**
+   ```bash
+   # 新版本支持完善的进程清理机制
+   # 使用 Ctrl+C 可安全中断并自动清理所有资源
    ```
 
 ### 紧急停止
@@ -254,6 +330,58 @@ sudo pkill -9 -f stress-ng
     - 记录不同负载下的系统表现
     - 建立性能基线和告警阈值
     - 制定扩容和优化策略
+
+## 开发和测试规则
+
+### Docker 测试环境
+
+**重要规则**: 
+- **loadctl.sh**: 必须在 Docker 容器中进行测试，不得在本地 macOS 环境直接运行
+- **loadctl-simple.sh**: 支持在 macOS 和 Linux 环境中直接运行和测试
+
+#### 创建测试容器
+
+```bash
+# 创建 CentOS 7 测试容器
+docker run -it --name loadctl-test --privileged -v $(pwd):/workspace centos:7 /bin/bash
+
+# 进入容器后切换到工作目录
+cd /workspace
+
+# 安装必要的依赖
+yum update -y
+yum install -y gcc make wget bc
+
+# 运行脚本测试
+./loadctl-simple.sh -T -c 35 -m 30
+```
+
+#### 测试流程
+
+1. **容器准备**: 使用 CentOS 7 作为标准测试环境
+2. **权限设置**: 使用 `--privileged` 确保容器有足够权限
+3. **文件挂载**: 通过 `-v $(pwd):/workspace` 挂载当前目录
+4. **依赖安装**: 在容器中安装必要的编译工具和依赖
+5. **脚本测试**: 在容器环境中运行和验证脚本功能
+
+#### 清理容器
+
+```bash
+# 退出容器
+exit
+
+# 删除测试容器
+docker rm loadctl-test
+
+# 清理镜像（可选）
+docker rmi centos:7
+```
+
+**注意事项**:
+- **loadctl.sh**: 专为 Linux 环境设计，在 macOS 上运行可能出现兼容性问题
+- **loadctl-simple.sh**: 支持跨平台运行，已针对 macOS 和 Linux 进行优化
+- Docker 容器提供了标准化的 Linux 测试环境
+- 测试完成后及时清理容器资源
 
 ## 技术支持
 
@@ -295,13 +423,28 @@ sudo pkill -9 -f stress-ng
 
 **v0.1.0 (2025-10-21)**
 
-- 基础智能资源控制功能 ,渐进式启动和实时监控 , 多种安装方式支持
+- 基础智能资源控制功能，渐进式启动和实时监控，多种安装方式支持
 - ✨ 新增基线内存追踪功能，精确控制增量内存使用
 - 🚀 新增分发包部署方式，支持快速多服务器部署
 - 🔧 改进为动态编译，减小文件体积并自动管理依赖
 - 📦 install_and_setup.sh 支持自动检测并优先使用 dist 包
 - 🛡️ 增强安全保护机制，添加目标上限保护
 - 📝 完善文档，新增核心功能详解和部署最佳实践
+
+**v0.1.1 (2025-01-XX)**
+
+- 🔧 **loadctl-simple.sh 重大改进**：
+  - 新增可选内存测试功能（-m 参数可选，不指定时仅进行CPU测试）
+  - 修复 CPU 使用率计算问题，支持 Linux 和 macOS 准确计算
+  - 完善进程清理机制，支持 Ctrl+C 安全中断并自动清理所有资源
+  - 优化信号处理，解决主脚本进程无法响应信号的问题
+- 🎯 **install_and_setup.sh 智能化升级**：
+  - 智能依赖检测，自动选择 loadctl.sh 或 loadctl-simple.sh 版本
+  - 支持自定义安装路径和自动创建符号链接
+  - 新增一键自动安装模式（--auto 参数）
+  - 多种安装方式支持（离线、在线、包管理器）
+- 🌐 **跨平台支持**：loadctl-simple.sh 现已支持 macOS 和 Linux 系统
+- 📚 **文档更新**：更新 README 反映最新功能特性和使用方法
 
 ---
 
